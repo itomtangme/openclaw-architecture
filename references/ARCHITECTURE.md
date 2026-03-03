@@ -611,10 +611,79 @@ Main workspace adds:
 
 ---
 
-## 17. Routing Logic (Orchestrator Algorithm)
+## 17. Task Affinity & Context Continuity
+
+When a parent delegates a task to a child agent, the parent **must track that delegation** so that follow-up messages on the same topic route back to the same child — preserving context continuity.
+
+### 17.1 Recent Delegations Log
+
+Every dispatching agent (L0–L4) maintains a mental log of recent delegations within the current conversation thread:
+
+```
+Recent Delegations (current thread):
+- [<timestamp>] <child-id> — <topic summary> — Status: <active|completed>
+```
+
+This is tracked **in-context** (within the agent's conversation memory), not as a separate file. The agent simply remembers: "I sent this topic to that child."
+
+### 17.2 Affinity Rules
+
+Before routing a new request, the dispatching agent applies these rules **in order**:
+
+1. **Topic Match**: Does the new request relate to a topic recently delegated to a child?
+   - Check for: same subject, follow-up questions, "tell me more", references to prior results
+   - If YES → **re-dispatch to the same child** with the follow-up context
+   
+2. **Explicit Reference**: Does the user reference something a child previously returned?
+   - e.g., "What's the detail of that email?" after a child found the email
+   - If YES → **re-dispatch to that child**
+
+3. **Recency Window**: Affinity applies within the current conversation thread. If the conversation topic clearly shifts to an unrelated domain, affinity resets.
+
+4. **Completed vs Active**: Even if a child's task is "completed", follow-ups on the same topic still route to that child — the child has the context.
+
+### 17.3 Affinity in Delegation Protocol
+
+When re-dispatching a follow-up to the same child, include a continuity marker:
+
+```
+[TASK FROM: <parent-id> (L<n>) → <child-id> (L<n+1>)]
+Continuity: follow-up (related to previous task)
+Goal: <the follow-up question or action>
+Context: <reference to prior result — e.g., "You previously found email titled 'testing'">
+Constraints: <any new constraints>
+Output Format: <what to return>
+Depth: <current depth>
+```
+
+The `Continuity: follow-up` marker tells the child this is a continuation, not a fresh task.
+
+### 17.4 Example
+
+```
+User: "Check if I have new email"
+L0 → dispatches to full-power → full-power finds email "testing" → returns result
+L0 remembers: [full-power — email check — found "testing"]
+
+User: "What's the detail of testing?"
+L0 checks recent delegations → topic matches "email / testing" → full-power has context
+L0 → re-dispatches to full-power with Continuity: follow-up
+full-power already has context → inspects the email → returns details
+```
+
+Without affinity, L0 would handle "What's the detail of testing?" itself — losing the child's context.
+
+---
+
+## 18. Routing Logic (Orchestrator Algorithm)
 
 ```
 RECEIVE request from user
+
+0. CHECK AFFINITY — does this relate to a recent delegation?
+     → Scan recent delegations for topic match or explicit reference
+     → IF match found → RE-DISPATCH to same child with Continuity: follow-up
+     → DONE
 
 1. IF "full power" explicit command:
      → DISPATCH to full-power (L1-C)
@@ -644,14 +713,15 @@ RECEIVE request from user
      → HANDLE directly at L0
      → SUGGEST creating a new L1-D
 
+RECORD delegation in recent delegations log (agent, topic, timestamp)
 UPDATE STATUS.md after each routing decision
 ```
 
-Each L1-D internally applies the same pattern for its own sub-agents.
+Each L1-D internally applies the same pattern (including affinity checks) for its own sub-agents.
 
 ---
 
-## 18. Governance Rules
+## 19. Governance Rules
 
 | Rule | Description |
 |------|-------------|
@@ -671,7 +741,7 @@ Each L1-D internally applies the same pattern for its own sub-agents.
 
 ---
 
-## 19. What This Architecture Does NOT Define
+## 20. What This Architecture Does NOT Define
 
 - ❌ Which domains/departments to install
 - ❌ How many agents you need (min 3, max unlimited)
@@ -681,7 +751,7 @@ Each L1-D internally applies the same pattern for its own sub-agents.
 
 ---
 
-## 20. Summary
+## 21. Summary
 
 | Aspect | Answer |
 |--------|--------|
@@ -697,6 +767,7 @@ Each L1-D internally applies the same pattern for its own sub-agents.
 | Cache | **Shared cache** — prevents redundant delegation |
 | Ecosystem | **ClawHub blueprints** — one-command agent install |
 | Health monitoring | **Heartbeat protocol** — smart routing based on agent load |
+| Context continuity | **Task affinity** — follow-ups route to the same child agent |
 
 ---
 

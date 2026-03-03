@@ -85,6 +85,7 @@ Delegation, results, and escalation follow structured message formats.
 See `references/ARCHITECTURE.md` section 9 for full protocol specification.
 
 Key rules:
+- **Task affinity** — follow-up messages on the same topic route back to the same child agent (section 17)
 - **No lateral shortcuts** — cross-branch communication goes through nearest common ancestor
 - **Fail-up** — failed agents escalate to parent, never fail silently
 - **Depth tracking** — every delegation includes depth counter; refuse at L5
